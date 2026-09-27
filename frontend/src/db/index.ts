@@ -5,6 +5,7 @@ import type { DefectSeverity, DefectType } from '../types/defect';
 import type { MatrixAvailability, MatrixFont, MatrixMaterial, TypeMatrix } from '../types/matrix';
 import { ptOfSize } from '../types/matrix';
 import type { ProofRecord } from '../types/proof';
+import { buildCaseSnapshot } from '../types/proof';
 import { matrixIdsOf } from '../utils/layout';
 import { suggestCaseCode, suggestMatrixCode, toPlain } from '../utils/format';
 
@@ -15,6 +16,7 @@ export const DB_NAME = 'gbmovabletype-db';
  * v1 建 matrices
  * v2 加 cases 表与 matrixId 索引
  * v3 加 defects / proofs 表，并为停用字模回填缺损原因
+ * v4 proofs 加 caseId 索引；为历史整盘试印回填字盘布局封存清单（格子位置 + 字符清单）
  */
 class MovableTypeDb extends Dexie {
   matrices!: Table<TypeMatrix, string>;
@@ -75,6 +77,29 @@ class MovableTypeDb extends Dexie {
             operator: '系统迁移',
             note: '由 v2 → v3 升级自动回填',
             createdAt: new Date().toISOString(),
+          });
+        }
+      });
+    this.version(4)
+      .stores({
+        matrices: 'id, code, character, font, sizeName, material, availability',
+        cases: 'id, code, kind, workStation, *matrixId',
+        defects: 'id, matrixId, defectType, severity, availability, foundDate',
+        proofs: 'id, matrixId, caseId, sampleNo, clarity, proofDate',
+      })
+      .upgrade(async (tx) => {
+        // v4：历史整盘试印只记了字盘编号，这里按编号找到字盘，补封一份当时的布局清单；
+        // 已找不到字盘的样张保留（caseId 为空、无清单），列表中提示字盘已删除。
+        const cases: TypeCase[] = await tx.table('cases').toArray();
+        const proofTable = tx.table<ProofRecord, string>('proofs');
+        const proofs = await proofTable.toArray();
+        for (const p of proofs) {
+          if (p.targetKind !== '字盘' || p.caseSnapshot) continue;
+          const typeCase = cases.find((c) => c.id === p.caseId) ?? cases.find((c) => c.code === p.targetRef);
+          if (!typeCase) continue;
+          await proofTable.update(p.id, {
+            caseId: typeCase.id,
+            caseSnapshot: buildCaseSnapshot(typeCase, p.createdAt || new Date().toISOString()),
           });
         }
       });
@@ -169,6 +194,8 @@ interface SeedProof {
   targetKind: '字符' | '字盘';
   targetRef: string;
   matrixId: string;
+  /** 整盘试印时填入对应字盘 id，建样时自动封存布局清单 */
+  caseId?: string;
   pressureKg: number;
   ink: string;
   impressions: number;
@@ -182,7 +209,7 @@ const SEED_PROOFS: SeedProof[] = [
   { id: 'pfr-3001', targetKind: '字符', targetRef: '活', matrixId: 'm-1001', pressureKg: 12.5, ink: '油烟墨 101', impressions: 40, sampleNo: 'YZ-20250512-01', clarity: '清晰', proofDate: '2025-05-12', note: '字口饱满，留作标准样张' },
   { id: 'pfr-3002', targetKind: '字符', targetRef: '字', matrixId: 'm-1002', pressureKg: 10, ink: '松烟墨 08', impressions: 32, sampleNo: 'YZ-20250512-02', clarity: '偏淡', proofDate: '2025-05-12', note: '压力偏低，建议加压至 12kg' },
   { id: 'pfr-3003', targetKind: '字符', targetRef: '墨', matrixId: 'm-1011', pressureKg: 14, ink: '油烟墨 101', impressions: 25, sampleNo: 'YZ-20250513-01', clarity: '糊版', proofDate: '2025-05-13', note: '缺笔叠加糊版，判定停用' },
-  { id: 'pfr-3004', targetKind: '字盘', targetRef: 'ZP-A-01', matrixId: '', pressureKg: 18.5, ink: '油烟墨 101', impressions: 60, sampleNo: 'YZ-20250518-01', clarity: '清晰', proofDate: '2025-05-18', note: '整盘试印，行列对齐良好' },
+  { id: 'pfr-3004', targetKind: '字盘', targetRef: 'ZP-A-01', matrixId: '', caseId: 'case-1001', pressureKg: 18.5, ink: '油烟墨 101', impressions: 60, sampleNo: 'YZ-20250518-01', clarity: '清晰', proofDate: '2025-05-18', note: '整盘试印，行列对齐良好' },
   { id: 'pfr-3005', targetKind: '字符', targetRef: '模', matrixId: 'm-1008', pressureKg: 11.5, ink: '松烟墨 08', impressions: 28, sampleNo: 'YZ-20250520-03', clarity: '糊版', proofDate: '2025-05-20', note: '磨损导致笔画发虚' },
   { id: 'pfr-3006', targetKind: '字符', targetRef: '纸', matrixId: 'm-1012', pressureKg: 9.5, ink: '松烟墨 08', impressions: 50, sampleNo: 'YZ-20250601-01', clarity: '清晰', proofDate: '2025-06-01', note: '' },
 ];
@@ -232,7 +259,23 @@ function buildSeed() {
       createdAt: now,
     };
   });
-  const proofs: ProofRecord[] = SEED_PROOFS.map((p) => ({ ...p, createdAt: now }));
+  const proofs: ProofRecord[] = SEED_PROOFS.map((p) => {
+    if (p.targetKind !== '字盘' || !p.caseId) {
+      return {
+        ...p,
+        caseId: '',
+        caseSnapshot: null,
+        createdAt: now,
+      };
+    }
+    const typeCase = cases.find((c) => c.id === p.caseId);
+    return {
+      ...p,
+      caseId: p.caseId ?? '',
+      caseSnapshot: typeCase ? buildCaseSnapshot(typeCase, now) : null,
+      createdAt: now,
+    };
+  });
   return { matrices, cases, defects, proofs };
 }
 

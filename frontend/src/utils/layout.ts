@@ -58,7 +58,11 @@ export function emptySlots(rows: number, cols: number, slots: CaseSlot[]): RCCel
 }
 
 /** 取指定格位的落位 */
-export function slotAt(slots: CaseSlot[], row: number, col: number): CaseSlot | undefined {
+export function slotAt<T extends { row: number; col: number }>(
+  slots: T[],
+  row: number,
+  col: number,
+): T | undefined {
   return slots.find((s) => s.row === row && s.col === col);
 }
 

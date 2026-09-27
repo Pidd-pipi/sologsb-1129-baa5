@@ -1,10 +1,18 @@
 import type { CaseSlot } from '../../types/case';
 import { rcKey, slotAt, type RCCell } from '../../utils/layout';
 
+/** 可渲染的格位内容：现行落位或整盘试印封存的格位均可 */
+export interface GridSlotLike {
+  row: number;
+  col: number;
+  character: string;
+  matrixId: string;
+}
+
 export interface LayoutGridProps {
   rows: number;
   cols: number;
-  slots: CaseSlot[];
+  slots: GridSlotLike[];
   /** 当前选中格位 */
   highlight?: RCCell | null;
   /** 需要额外高亮的格位（如某枚字模所在位置） */

@@ -5,6 +5,7 @@ import { shouldDisableMatrix } from '../types/defect';
 import type { MatrixInput, TypeMatrix } from '../types/matrix';
 import { ptOfSize } from '../types/matrix';
 import type { ProofInput, ProofRecord } from '../types/proof';
+import { buildCaseSnapshot } from '../types/proof';
 import { makeId, toPlain, todayStr } from '../utils/format';
 
 interface MatrixState {
@@ -161,11 +162,23 @@ export const useMatrixStore = create<MatrixState>((set, get) => ({
 
   addProof: async (input) => {
     const matrix = input.matrixId ? get().matrices.find((m) => m.id === input.matrixId) : undefined;
+    // 整盘试印：从库里取出当前字盘布局，封存格子位置与字符清单，作为日后比对依据
+    let caseId = '';
+    let caseSnapshot: ProofRecord['caseSnapshot'] = null;
+    if (input.targetKind === '字盘') {
+      if (!input.caseId) throw new Error('请选择试印字盘');
+      const typeCase = await db.cases.get(input.caseId);
+      if (!typeCase) throw new Error('未找到对应字盘，无法登记整盘试印');
+      caseId = typeCase.id;
+      caseSnapshot = buildCaseSnapshot(typeCase);
+    }
     const row: ProofRecord = toPlain({
       id: makeId('pfr'),
       targetKind: input.targetKind,
       targetRef: input.targetRef.trim(),
       matrixId: input.matrixId,
+      caseId,
+      caseSnapshot,
       pressureKg: Number(input.pressureKg),
       ink: input.ink.trim(),
       impressions: Number(input.impressions),

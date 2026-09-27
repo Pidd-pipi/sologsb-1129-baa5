@@ -165,6 +165,7 @@ export default function MatrixDetail() {
       targetKind: '字符' as const,
       targetRef: matrix.character,
       matrixId: matrix.id,
+      caseId: '',
       pressureKg: Number(proofForm.pressureKg),
       ink: proofForm.ink,
       impressions: Number(proofForm.impressions),
