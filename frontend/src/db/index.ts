@@ -5,6 +5,7 @@ import type { DefectSeverity, DefectType } from '../types/defect';
 import type { MatrixAvailability, MatrixFont, MatrixMaterial, TypeMatrix } from '../types/matrix';
 import { ptOfSize } from '../types/matrix';
 import type { ProofRecord } from '../types/proof';
+import { snapshotOfCase } from '../types/proof';
 import { matrixIdsOf } from '../utils/layout';
 import { suggestCaseCode, suggestMatrixCode, toPlain } from '../utils/format';
 
@@ -232,7 +233,15 @@ function buildSeed() {
       createdAt: now,
     };
   });
-  const proofs: ProofRecord[] = SEED_PROOFS.map((p) => ({ ...p, createdAt: now }));
+  // 整盘试印的示例记录同步封存当时布局，便于演示「字盘改动 → 样张失效 → 恢复后提示消失」
+  const proofs: ProofRecord[] = SEED_PROOFS.map((p) => ({
+    ...p,
+    layoutSnapshot:
+      p.targetKind === '字盘'
+        ? snapshotOfCase(cases.find((c) => c.code === p.targetRef))
+        : null,
+    createdAt: now,
+  }));
   return { matrices, cases, defects, proofs };
 }
 

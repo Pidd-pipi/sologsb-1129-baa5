@@ -5,6 +5,7 @@ import { shouldDisableMatrix } from '../types/defect';
 import type { MatrixInput, TypeMatrix } from '../types/matrix';
 import { ptOfSize } from '../types/matrix';
 import type { ProofInput, ProofRecord } from '../types/proof';
+import { snapshotOfCase } from '../types/proof';
 import { makeId, toPlain, todayStr } from '../utils/format';
 
 interface MatrixState {
@@ -161,6 +162,11 @@ export const useMatrixStore = create<MatrixState>((set, get) => ({
 
   addProof: async (input) => {
     const matrix = input.matrixId ? get().matrices.find((m) => m.id === input.matrixId) : undefined;
+    // 整盘试印：封存字盘当前的格子位置与字符清单，作为日后比对依据；单字试印不封存
+    const layoutSnapshot =
+      input.targetKind === '字盘'
+        ? snapshotOfCase(await db.cases.where('code').equals(input.targetRef.trim()).first())
+        : null;
     const row: ProofRecord = toPlain({
       id: makeId('pfr'),
       targetKind: input.targetKind,
@@ -173,6 +179,7 @@ export const useMatrixStore = create<MatrixState>((set, get) => ({
       clarity: input.clarity,
       proofDate: input.proofDate || todayStr(),
       note: (input.note ?? '').trim(),
+      layoutSnapshot,
       createdAt: new Date().toISOString(),
     });
     if (matrix && input.targetKind === '字符' && !row.targetRef) row.targetRef = matrix.character;
